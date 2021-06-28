@@ -39,17 +39,6 @@ using matrix_ref = array_ref<T, matrix_shape<Rows, Cols>>;
 template <class T, index_t Rows = dynamic, index_t Cols = dynamic>
 using const_matrix_ref = matrix_ref<const T, Rows, Cols>;
 
-/** A vector is just a 1-d array. */
-template <index_t Length = dynamic>
-using vector_shape = shape<dense_dim<dynamic, Length>>;
-
-template <class T, index_t Length = dynamic, class Alloc = std::allocator<T>>
-using vector = array<T, vector_shape<Length>, Alloc>;
-template <class T, index_t Length = dynamic>
-using vector_ref = array_ref<T, vector_shape<Length>>;
-template <class T, index_t Length = dynamic>
-using const_vector_ref = vector_ref<const T, Length>;
-
 /** A matrix with static dimensions `Rows` and `Cols`, with an
  * `auto_allocator`. */
 template <class T, index_t Rows, index_t Cols>

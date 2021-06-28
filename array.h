@@ -31,8 +31,10 @@
 
 #include <limits>
 #include <memory>
+#include <ostream>
 #include <tuple>
 #include <type_traits>
+#include <vector>
 
 // Some things in this header are unbearably slow without optimization if they
 // don't get inlined.
@@ -1819,6 +1821,17 @@ NDARRAY_HOST_DEVICE auto make_array_ref_at(
 
 } // namespace internal
 
+/** A vector is just a 1-d array. */
+template <index_t Length = dynamic>
+using vector_shape = shape<dense_dim<dynamic, Length>>;
+
+template <class T, index_t Length = dynamic, class Alloc = std::allocator<T>>
+using vector = array<T, vector_shape<Length>, Alloc>;
+template <class T, index_t Length = dynamic>
+using vector_ref = array_ref<T, vector_shape<Length>>;
+template <class T, index_t Length = dynamic>
+using const_vector_ref = vector_ref<const T, Length>;
+
 /** A reference to an array is an object with a shape mapping indices to flat
  * offsets, which are used to dereference a pointer. This object does not own
  * any memory, and it is cheap to copy. */
@@ -1860,6 +1873,8 @@ private:
   template <size_t Dim>
   using enable_if_dim = std::enable_if_t < Dim<rank()>;
 
+  using enable_if_vector = std::enable_if<std::is_same<Shape, vector_shape<>>::value>;
+
   pointer base_;
   Shape shape_;
 
@@ -1873,6 +1888,9 @@ public:
 
   NDARRAY_HOST_DEVICE array_ref(pointer base, const Shape& shape, std::false_type /*resolve*/)
       : base_(base), shape_(shape) {}
+
+  NDARRAY_HOST_DEVICE array_ref(std::vector<value_type>& v, enable_if_vector* = nullptr)
+      : base_(v.data()), shape_(v.size()) {}
 
   /** Shallow copy or assign an array_ref. */
   NDARRAY_HOST_DEVICE array_ref(const array_ref& other) = default;
@@ -2005,6 +2023,35 @@ public:
     return result;
   }
   NDARRAY_HOST_DEVICE bool operator==(const array_ref& other) const { return !operator!=(other); }
+
+  template <class U>
+  NDARRAY_HOST_DEVICE array_ref& operator+=(const array_ref<U, Shape>& rhs) {
+    assert(shape_ == rhs.shape());
+    copy_shape_traits<Shape, Shape>::for_each_value(
+        shape_, base_, rhs.shape(), rhs.base(), [](reference a, typename array_ref<U, Shape>::reference b) {
+          a += b;
+        });
+    return *this;
+  }
+
+  template <class U>
+  NDARRAY_HOST_DEVICE array_ref& operator-=(const array_ref<U, Shape>& rhs) {
+    assert(shape_ == rhs.shape());
+    copy_shape_traits<Shape, Shape>::for_each_value(
+        shape_, base_, rhs.shape(), rhs.base(), [](reference a, typename array_ref<U, Shape>::reference b) {
+          a -= b;
+        });
+    return *this;
+  }
+
+  template <class U>
+  NDARRAY_HOST_DEVICE void copy_elems(const array_ref<U, Shape>& rhs) {
+    assert(shape_ == rhs.shape());
+    copy_shape_traits<Shape, Shape>::for_each_value(
+        shape_, base_, rhs.shape(), rhs.base(), [](reference a, typename array_ref<U, Shape>::reference b) {
+          a = b;
+        });
+  }
 
   NDARRAY_HOST_DEVICE const array_ref<T, Shape>& ref() const { return *this; }
 
@@ -2509,6 +2556,11 @@ public:
   template <typename NewShape, typename T2, typename OldShape, typename Alloc2>
   friend array<T2, NewShape, Alloc2> move_reinterpret_shape(
       array<T2, OldShape, Alloc2>&& from, index_t offset);
+
+  friend std::ostream& operator<<(std::ostream& os, const array& mx) {
+    mx.for_each_value([&](const T& a) { os << a << ", "; });
+    return os;
+  }
 };
 
 /** An array type with an arbitrary shape of rank `Rank`. */
