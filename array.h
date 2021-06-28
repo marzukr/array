@@ -132,8 +132,8 @@ struct constexpr_index {
 public:
   // These asserts are really hard to debug
   // https://github.com/dsharlet/array/issues/26
-  NDARRAY_HOST_DEVICE constexpr_index(index_t value = Value) { assert(value == Value); }
-  NDARRAY_HOST_DEVICE constexpr_index& operator=(index_t value) {
+  NDARRAY_HOST_DEVICE constexpr_index([[maybe_unused]] index_t value = Value) { assert(value == Value); }
+  NDARRAY_HOST_DEVICE constexpr_index& operator=([[maybe_unused]] index_t value) {
     assert(value == Value);
     return *this;
   }
