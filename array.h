@@ -29,6 +29,7 @@
 #include <cassert>
 #endif
 
+#include <array>
 #include <limits>
 #include <memory>
 #include <ostream>
@@ -1832,6 +1833,72 @@ using vector_ref = array_ref<T, vector_shape<Length>>;
 template <class T, index_t Length = dynamic>
 using const_vector_ref = vector_ref<const T, Length>;
 
+template <class T, class Shape>
+class array_it {
+public:
+  /** Type of elements referenced in this array_it. */
+  using value_type = T;
+  using pointer = value_type*;
+  /** Type of the shape of this array_it */
+  using shape_type = Shape;
+  using index_type = typename Shape::index_type;
+  using size_type = size_t;
+
+  template <size_type D>
+  using is_last_loop = std::conditional_t<D + 1 == shape_type::rank(), std::true_type, std::false_type>;
+
+private:
+  std::array<nda::index_t, shape_type::rank()> indicies_;
+  shape_type shape_;
+  pointer current_;
+
+  template <size_type D>
+  NDARRAY_HOST_DEVICE void increment_impl(std::true_type) {
+    nda::index_t& idx = std::get<D>(indicies_);
+    nda::index_t stride = std::get<D>(shape_.stride());
+    ++idx;
+    current_ += stride;
+  }
+
+  template <size_type D>
+  NDARRAY_HOST_DEVICE void increment_impl(std::false_type) {
+    nda::index_t& idx = std::get<D>(indicies_);
+    nda::index_t extent = std::get<D>(shape_.extent());
+    nda::index_t stride = std::get<D>(shape_.stride());
+    if (idx + 1 < extent) {
+      ++idx;
+      current_ += stride;
+    } else {
+      current_ -= idx * stride;
+      idx = 0;
+      increment_impl<D + 1>(is_last_loop<D + 1>());
+    }
+  }
+
+public:
+  NDARRAY_HOST_DEVICE array_it(pointer base, const shape_type& shape)
+      : indicies_{}, shape_{internal::optimize_shape(shape)}, current_{base} {}
+  array_it(const array_it& other) = default;
+  array_it& operator=(const array_it& other) = default;
+
+  NDARRAY_HOST_DEVICE array_it& operator++() {
+    increment_impl<0>(is_last_loop<0>());
+    return *this;
+  }
+
+  NDARRAY_HOST_DEVICE value_type& operator*() const {
+    return *current_;
+  }
+
+  NDARRAY_HOST_DEVICE bool operator==(const array_it& other) const {
+    return current_ == other.current_;
+  }
+
+  NDARRAY_HOST_DEVICE bool operator!=(const array_it& other) const {
+    return !(this->operator==(other));
+  }
+};
+
 /** A reference to an array is an object with a shape mapping indices to flat
  * offsets, which are used to dereference a pointer. This object does not own
  * any memory, and it is cheap to copy. */
@@ -1843,6 +1910,7 @@ public:
   using reference = value_type&;
   using const_reference = const value_type&;
   using pointer = value_type*;
+  using iterator = array_it<T, Shape>;
   /** Type of the shape of this array_ref. */
   using shape_type = Shape;
   using index_type = typename Shape::index_type;
@@ -1891,6 +1959,9 @@ public:
 
   NDARRAY_HOST_DEVICE array_ref(std::vector<value_type>& v, enable_if_vector* = nullptr)
       : base_(v.data()), shape_(v.size()) {}
+
+  NDARRAY_HOST_DEVICE array_ref(pointer p, size_type s, enable_if_vector* = nullptr)
+      : base_(p), shape_(s) {}
 
   /** Shallow copy or assign an array_ref. */
   NDARRAY_HOST_DEVICE array_ref(const array_ref& other) = default;
@@ -1944,6 +2015,15 @@ public:
   template <class Fn, class = internal::enable_if_callable<Fn, reference>>
   NDARRAY_HOST_DEVICE void for_each_value(Fn&& fn) const {
     shape_traits_type::for_each_value(shape_, base_, fn);
+  }
+
+  NDARRAY_HOST_DEVICE iterator begin() const {
+    return iterator{base_, shape_};
+  }
+
+  NDARRAY_HOST_DEVICE iterator end() const {
+    pointer end = internal::pointer_add(base_, shape_.flat_extent());
+    return iterator{end, shape_};
   }
 
   /** Pointer to the element at the min index of the shape. */
@@ -2023,7 +2103,40 @@ public:
     return result;
   }
   NDARRAY_HOST_DEVICE bool operator==(const array_ref& other) const { return !operator!=(other); }
+  bool operator<(const vector_ref<value_type>& other) const { return compare(other) < 0; }
+  int compare(const vector_ref<value_type>& other) const {
+    index_t extent = std::get<0>(shape_.dims()).extent();
+    index_t other_extent = std::get<0>(shape_.dims()).extent();
+    /* If this has more elements, it's greater than other. If it has less
+       elements then it is less than other. If they have the same number of
+       elements, we compare the contents. */
+    if (extent > other_extent) {
+      return 1;
+    } else if (other_extent < extent) {
+      return -1;
+    } else {
+      /* If the first element of this is less than the first element of other,
+         then this is less than other. If it is greater, then this is greater
+         than other. If it's the same, check the next element. Repeat this for
+         all elements. */
+      index_t min = std::get<0>(shape_.dims()).min();
+      for (index_t i = min; i < extent + min; ++i) {
+        if (operator()(i) < other(i)) {
+          return -1;
+        } else if (operator()(i) > other(i)) {
+          return 1;
+        } else {
+          continue;
+        }
+      }  // for i
+    }  // else
 
+    /* If all elements are the same and they are of the same length, they are
+       equal. */
+    return 0;
+  }
+
+  /** Add the values of another array_ref of the same shape to this one. */
   template <class U>
   NDARRAY_HOST_DEVICE array_ref& operator+=(const array_ref<U, Shape>& rhs) {
     assert(shape_ == rhs.shape());
@@ -2034,6 +2147,8 @@ public:
     return *this;
   }
 
+  /** Subtract the values of another array_ref of the same shape from this
+   * one. */
   template <class U>
   NDARRAY_HOST_DEVICE array_ref& operator-=(const array_ref<U, Shape>& rhs) {
     assert(shape_ == rhs.shape());
@@ -2044,6 +2159,7 @@ public:
     return *this;
   }
 
+  /** Copy the values of another array_ref of the same shape to this one. */
   template <class U>
   NDARRAY_HOST_DEVICE void copy_elems(const array_ref<U, Shape>& rhs) {
     assert(shape_ == rhs.shape());
