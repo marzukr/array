@@ -1959,7 +1959,8 @@ public:
   NDARRAY_HOST_DEVICE array_ref(pointer base, const Shape& shape, std::false_type /*resolve*/)
       : base_(base), shape_(shape) {}
 
-  NDARRAY_HOST_DEVICE array_ref(std::vector<value_type>& v, enable_if_vector* = nullptr)
+  template <class VectorType>
+  NDARRAY_HOST_DEVICE array_ref(VectorType& v, enable_if_vector* = nullptr)
       : base_(v.data()), shape_(v.size()) {}
 
   NDARRAY_HOST_DEVICE array_ref(pointer p, size_type s, enable_if_vector* = nullptr)
