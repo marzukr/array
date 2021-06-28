@@ -681,7 +681,7 @@ NDARRAY_HOST_DEVICE auto intervals_with_strides(
 
 // Make a tuple of dims corresponding to elements in intervals that are not slices.
 template <class Dim>
-NDARRAY_HOST_DEVICE std::tuple<> skip_slices_impl(const Dim& d, index_t) {
+NDARRAY_HOST_DEVICE std::tuple<> skip_slices_impl([[maybe_unused]] const Dim& d, index_t) {
   return std::tuple<>();
 }
 template <class Dim, index_t Min, index_t Extent>
@@ -806,7 +806,7 @@ NDARRAY_HOST_DEVICE index_t find_stride(index_t extent, const Dims& dims, index_
 
 // Replace unknown dynamic strides for each dimension, starting with the first dimension.
 template <class AllDims>
-NDARRAY_HOST_DEVICE void resolve_unknown_strides(AllDims& all_dims) {}
+NDARRAY_HOST_DEVICE void resolve_unknown_strides([[maybe_unused]] AllDims& all_dims) {}
 template <class AllDims, class Dim0, class... Dims>
 NDARRAY_HOST_DEVICE void resolve_unknown_strides(AllDims& all_dims, Dim0& dim0, Dims&... dims) {
   if (is_dynamic(dim0.stride())) {
@@ -872,7 +872,7 @@ NDARRAY_HOST_DEVICE auto convert_dim(const std::tuple<Us...>& u) {
   return std::get<I>(u);
 }
 template <size_t I, class T, class... Us, std::enable_if_t<(I >= sizeof...(Us)), int> = 0>
-NDARRAY_HOST_DEVICE auto convert_dim(const std::tuple<Us...>& u) {
+NDARRAY_HOST_DEVICE auto convert_dim([[maybe_unused]] const std::tuple<Us...>& u) {
   // For dims beyond the rank of U, make a dimension of type T_I with extent 1.
   return decltype(std::get<I>(internal::declval<T>()))(1);
 }
@@ -1310,7 +1310,7 @@ NDARRAY_INLINE NDARRAY_HOST_DEVICE void for_each_value_in_order(
 // Scalar buffers are a special case.
 template <size_t D, class Fn, class... Ptrs>
 NDARRAY_INLINE NDARRAY_HOST_DEVICE void for_each_value_in_order(
-    const std::tuple<>& extent, Fn&& fn, Ptrs... ptrs) {
+    [[maybe_unused]] const std::tuple<>& extent, Fn&& fn, Ptrs... ptrs) {
   fn(*std::get<0>(ptrs)...);
 }
 
@@ -1413,7 +1413,7 @@ NDARRAY_INLINE NDARRAY_HOST_DEVICE auto get_or_empty(const T& t) {
   return std::make_tuple(std::get<I>(t));
 }
 template <size_t I, class T, std::enable_if_t<(I >= std::tuple_size<T>::value), int> = 0>
-NDARRAY_INLINE NDARRAY_HOST_DEVICE std::tuple<> get_or_empty(const T& t) {
+NDARRAY_INLINE NDARRAY_HOST_DEVICE std::tuple<> get_or_empty([[maybe_unused]] const T& t) {
   return std::tuple<>();
 }
 
