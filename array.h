@@ -1840,7 +1840,7 @@ public:
   using value_type = T;
   using pointer = value_type*;
   /** Type of the shape of this array_it */
-  using shape_type = Shape;
+  using shape_type = shape_of_rank<Shape::rank()>;
   using index_type = typename Shape::index_type;
   using size_type = size_t;
 
@@ -1865,19 +1865,21 @@ private:
     nda::index_t& idx = std::get<D>(indicies_);
     nda::index_t extent = std::get<D>(shape_.extent());
     nda::index_t stride = std::get<D>(shape_.stride());
-    if (idx + 1 < extent) {
-      ++idx;
-      current_ += stride;
-    } else {
-      current_ -= idx * stride;
-      idx = 0;
-      increment_impl<D + 1>(is_last_loop<D + 1>());
+    ++idx;
+    current_ += stride;
+    if (idx == extent) {
+      nda::index_t next_stride = std::get<D + 1>(shape_.stride());
+      if (next_stride != 0) {
+        current_ -= idx * stride;
+        idx = 0;
+        increment_impl<D + 1>(is_last_loop<D + 1>());
+      }
     }
   }
 
 public:
   NDARRAY_HOST_DEVICE array_it(pointer base, const shape_type& shape)
-      : indicies_{}, shape_{internal::optimize_shape(shape)}, current_{base} {}
+      : indicies_{}, shape_{std::move(internal::optimize_shape(shape))}, current_{base} {}
   array_it(const array_it& other) = default;
   array_it& operator=(const array_it& other) = default;
 
@@ -2020,7 +2022,6 @@ public:
   NDARRAY_HOST_DEVICE iterator begin() const {
     return iterator{base_, shape_};
   }
-
   NDARRAY_HOST_DEVICE iterator end() const {
     pointer end = internal::pointer_add(base_, shape_.flat_extent());
     return iterator{end, shape_};
@@ -2106,13 +2107,13 @@ public:
   bool operator<(const vector_ref<value_type>& other) const { return compare(other) < 0; }
   int compare(const vector_ref<value_type>& other) const {
     index_t extent = std::get<0>(shape_.dims()).extent();
-    index_t other_extent = std::get<0>(shape_.dims()).extent();
+    index_t other_extent = std::get<0>(other.shape_.dims()).extent();
     /* If this has more elements, it's greater than other. If it has less
        elements then it is less than other. If they have the same number of
        elements, we compare the contents. */
     if (extent > other_extent) {
       return 1;
-    } else if (other_extent < extent) {
+    } else if (extent < other_extent) {
       return -1;
     } else {
       /* If the first element of this is less than the first element of other,
@@ -2191,6 +2192,11 @@ public:
     shape_ = new_shape;
     base_ = internal::pointer_add(base_, offset);
   }
+
+  NDARRAY_HOST_DEVICE friend std::ostream& operator<<(std::ostream& os, const array_ref& mx) {
+    mx.for_each_value([&](const T& a) { os << a << ", "; });
+    return os;
+  }
 };
 
 /** array_ref with an arbitrary shape of rank `Rank`. */
@@ -2219,6 +2225,7 @@ public:
   using const_reference = const value_type&;
   using pointer = typename alloc_traits::pointer;
   using const_pointer = typename alloc_traits::const_pointer;
+  using iterator = array_it<T, Shape>;
 
   /** Type of the shape of this array. */
   using shape_type = Shape;
@@ -2534,6 +2541,14 @@ public:
     shape_traits_type::for_each_value(shape_, base_, fn);
   }
 
+  NDARRAY_HOST_DEVICE iterator begin() const {
+    return iterator{base_, shape_};
+  }
+  NDARRAY_HOST_DEVICE iterator end() const {
+    pointer end = internal::pointer_add(base_, shape_.flat_extent());
+    return iterator{end, shape_};
+  }
+
   /** Pointer to the element at the min index of the shape. */
   pointer base() { return base_; }
   const_pointer base() const { return base_; }
@@ -2673,7 +2688,7 @@ public:
   friend array<T2, NewShape, Alloc2> move_reinterpret_shape(
       array<T2, OldShape, Alloc2>&& from, index_t offset);
 
-  friend std::ostream& operator<<(std::ostream& os, const array& mx) {
+  NDARRAY_HOST_DEVICE friend std::ostream& operator<<(std::ostream& os, const array& mx) {
     mx.for_each_value([&](const T& a) { os << a << ", "; });
     return os;
   }
